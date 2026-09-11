@@ -4,7 +4,7 @@ An [MCP](https://modelcontextprotocol.io) server that lets an LLM answer Charlot
 everyday questions with official public data from the
 **City of Charlotte Open Data Portal** — <https://data.charlottenc.gov>.
 
-> The portal lives at `data.charlottenc.gov` (the `data.charlotte.gov` hostname does not exist).
+> The portal lives at `data.charlottenc.gov`.
 > It is an ArcGIS Hub site; its ~380 datasets are ArcGIS REST layers run by the City of
 > Charlotte and Mecklenburg County. No API key is required.
 
