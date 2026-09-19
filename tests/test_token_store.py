@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator
+from typing import Any, Protocol
 
 import pytest
 from mcp.server.auth.provider import AccessToken, AuthorizationCode, RefreshToken
@@ -29,35 +30,62 @@ needs_emulator = pytest.mark.skipif(
 
 pytestmark = pytest.mark.anyio
 
-StoreFactory = Callable[[Clock], TokenStore]
+
+class StoreFactory(Protocol):
+    """Builds a store on a given clock, optionally under a fixed collection prefix.
+
+    The prefix only means anything to Firestore, where it keeps concurrent runs
+    from colliding; the memory store accepts and ignores it so both
+    implementations satisfy one interface.
+    """
+
+    def __call__(self, clock: Clock, prefix: str | None = None) -> TokenStore: ...
 
 
-def _memory(clock: Clock) -> TokenStore:
+def _memory(clock: Clock, prefix: str | None = None) -> TokenStore:
     return MemoryTokenStore(now=clock, max_clients=MAX_CLIENTS)
 
 
-def _firestore(clock: Clock, prefix: str | None = None) -> TokenStore:
+def firestore_client(open_clients: list[Any]) -> Any:
+    """An emulator-backed client, registered so the fixture can close it.
+
+    A Firestore AsyncClient holds gRPC machinery that schedules work back onto
+    the running loop. Left open, it is torn down after anyio has closed that
+    loop and raises "Event loop is closed" from the cleanup rather than from
+    the test - intermittently, because it is a race. Closing it is the fix.
+    """
     from google.cloud.firestore import AsyncClient
 
-    from queensestate.token_store_firestore import FirestoreTokenStore
+    database = AsyncClient(project="queensestate-test")
+    open_clients.append(database)
+    return database
 
-    return FirestoreTokenStore(
-        AsyncClient(project="queensestate-test"),
-        now=clock,
-        prefix=prefix or f"test_{uuid.uuid4().hex}_",
-        max_clients=MAX_CLIENTS,
-    )
+
+def _firestore(open_clients: list[Any]) -> StoreFactory:
+    def build(clock: Clock, prefix: str | None = None) -> TokenStore:
+        from queensestate.token_store_firestore import FirestoreTokenStore
+
+        return FirestoreTokenStore(
+            firestore_client(open_clients),
+            now=clock,
+            prefix=prefix or f"test_{uuid.uuid4().hex}_",
+            max_clients=MAX_CLIENTS,
+        )
+
+    return build
 
 
 @pytest.fixture(
     params=[
-        pytest.param(_memory, id="memory"),
-        pytest.param(_firestore, id="firestore", marks=needs_emulator),
+        pytest.param("memory", id="memory"),
+        pytest.param("firestore", id="firestore", marks=needs_emulator),
     ]
 )
-def make_store(request: pytest.FixtureRequest) -> StoreFactory:
-    factory: StoreFactory = request.param
-    return factory
+async def make_store(request: pytest.FixtureRequest) -> AsyncIterator[StoreFactory]:
+    open_clients: list[Any] = []
+    yield _memory if request.param == "memory" else _firestore(open_clients)
+    for database in open_clients:
+        await database.close()
 
 
 def pending(clock: Clock, ttl: float = 600) -> PendingAuthorization:
@@ -251,21 +279,24 @@ async def test_expired_tokens_are_not_returned(make_store: StoreFactory) -> None
 
 @needs_emulator
 async def test_firestore_never_stores_a_secret_that_could_be_presented() -> None:
-    from google.cloud.firestore import AsyncClient
-
     clock = Clock()
     prefix = f"test_{uuid.uuid4().hex}_"
-    store = _firestore(clock, prefix)
+    open_clients: list[Any] = []
+    store = _firestore(open_clients)(clock, prefix)
     access, refresh = token_pair(clock, "access-secret", "refresh-secret")
     await store.save_pending("state-secret", pending(clock))
     await store.save_code(authorization_code(clock, "code-secret"))
     await store.save_tokens(access, refresh)
 
     stored: list[str] = []
-    database = AsyncClient(project="queensestate-test")
-    for kind in ("pending", "codes", "access_tokens", "refresh_tokens"):
-        async for snapshot in database.collection(f"{prefix}{kind}").stream():
-            stored.append(f"{snapshot.id} {snapshot.to_dict()}")
+    database = firestore_client(open_clients)
+    try:
+        for kind in ("pending", "codes", "access_tokens", "refresh_tokens"):
+            async for snapshot in database.collection(f"{prefix}{kind}").stream():
+                stored.append(f"{snapshot.id} {snapshot.to_dict()}")
+    finally:
+        for opened in open_clients:
+            await opened.close()
 
     assert len(stored) == 4
     dump = "\n".join(stored)
