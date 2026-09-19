@@ -109,9 +109,38 @@ Add to `claude_desktop_config.json`:
 ### Other transports and debugging
 
 ```bash
-.venv/bin/queensestate --transport streamable-http --port 8000   # http://127.0.0.1:8000/mcp
-npx @modelcontextprotocol/inspector .venv/bin/queensestate       # interactive inspector
+.venv/bin/queensestate --transport http --port 8000        # http://127.0.0.1:8000/mcp
+npx @modelcontextprotocol/inspector .venv/bin/queensestate  # interactive inspector
 ```
+
+The `http` transport authenticates its callers with Google OAuth and refuses to start
+without a public URL, a Google client, and an allow list — see [Hosting](#hosting). To try
+it locally:
+
+```bash
+QUEENSESTATE_PUBLIC_URL=http://localhost:8000 \
+QUEENSESTATE_GOOGLE_CLIENT_ID=... QUEENSESTATE_GOOGLE_CLIENT_SECRET=... \
+QUEENSESTATE_ALLOWED_EMAILS=you@gmail.com \
+  .venv/bin/queensestate --transport http --port 8000
+```
+
+## Hosting
+
+The hosted server runs on Google Cloud Run at
+<https://queensestate.adamwanninger.com/mcp>, and is its own OAuth 2.1 authorization
+server: it delegates the sign-in to Google purely to learn which account is calling, then
+checks that address against an allow list and mints its own tokens. Google's tokens are
+never passed through to the MCP client.
+
+```bash
+claude mcp add --transport http queensestate https://queensestate.adamwanninger.com/mcp
+```
+
+`scripts/deploy-gcp.sh` provisions and deploys the whole thing, and re-running it is also
+how you update. See [deploy/GCP.md](deploy/GCP.md).
+
+Hosting is only for the HTTP transport. Running the server locally over stdio needs no
+Google account, no allow list, and none of the cloud dependencies.
 
 ## Development
 
@@ -156,3 +185,7 @@ Layout:
 - CMPD officer traffic-stop statistics
 - Sidewalk and bike network gaps near an address
 - Tree canopy and land surface temperature by neighborhood
+
+## License
+
+MIT - see [LICENSE](LICENSE).

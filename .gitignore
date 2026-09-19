@@ -9,3 +9,5 @@ dist/
 .ruff_cache/
 .coverage
 .DS_Store
+.env
+.playwright-mcp/

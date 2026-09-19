@@ -7,16 +7,29 @@ name = "queensestate"
 dynamic = ["version"]
 description = "MCP server for the City of Charlotte Open Data Portal (data.charlottenc.gov)."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
+    "anyio>=4.5",
     "httpx>=0.28,<1",
     "mcp>=2.2,<3",
     "pydantic>=2.13,<3",
+    # The http transport: the ASGI app, the server that runs it, and ID token
+    # verification. All three also arrive with mcp; declared because we import them.
+    "starlette>=0.48,<2",
+    "uvicorn>=0.34,<1",
+    "pyjwt[crypto]>=2.10,<3",
     "tzdata>=2025.2; sys_platform == 'win32'",
 ]
 
+[project.optional-dependencies]
+# The Firestore token store (QUEENSESTATE_TOKEN_STORE=firestore), for a hosted
+# HTTP server that scales to zero or runs several instances. stdio never needs it.
+gcp = ["google-cloud-firestore>=2.20,<3"]
+
 [project.scripts]
-queensestate = "queensestate.server:main"
+queensestate = "queensestate.main:main"
 
 [dependency-groups]
 dev = [
@@ -24,6 +37,7 @@ dev = [
     "pytest>=9.1",
     "respx>=0.23",
     "ruff>=0.16",
+    "queensestate[gcp]",
 ]
 
 [tool.hatch.version]

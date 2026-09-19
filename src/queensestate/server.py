@@ -5,9 +5,7 @@ ArcGIS Hub site whose datasets are ArcGIS REST layers run by the City of Charlot
 Mecklenburg County. Every tool is read-only.
 """
 
-import argparse
 import asyncio
-import logging
 import math
 import re
 from collections import Counter
@@ -18,6 +16,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Final, Literal
 
 import httpx
+from mcp.server.auth.provider import OAuthAuthorizationServerProvider
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
@@ -1634,8 +1634,18 @@ _TOOLS: Final[tuple[tuple[Callable[..., Coroutine[Any, Any, BaseModel]], str], .
 )
 
 
-def create_server() -> MCPServer[AppState]:
-    """Build the MCP server with every tool registered as read-only."""
+def create_server(
+    *,
+    auth: AuthSettings | None = None,
+    auth_server_provider: OAuthAuthorizationServerProvider[Any, Any, Any] | None = None,
+) -> MCPServer[AppState]:
+    """Build the MCP server with every tool registered as read-only.
+
+    ``auth`` and ``auth_server_provider`` are ``None`` on stdio, where the
+    client launches the server itself and there is nobody to authenticate, and
+    set by :mod:`queensestate.http` for a hosted deployment. Nothing about the
+    tools differs between the two.
+    """
     server: MCPServer[AppState] = MCPServer(
         "queensestate",
         title="QueensEstate",
@@ -1643,27 +1653,9 @@ def create_server() -> MCPServer[AppState]:
         website_url=PORTAL_URL,
         version=__version__,
         lifespan=_lifespan,
+        auth=auth,
+        auth_server_provider=auth_server_provider,
     )
     for tool, title in _TOOLS:
         server.tool(title=title, annotations=_READ_ONLY)(tool)
     return server
-
-
-def main() -> None:
-    """Console entry point: serve over stdio (default) or Streamable HTTP."""
-    parser = argparse.ArgumentParser(description="QueensEstate MCP server")
-    parser.add_argument("--transport", choices=("stdio", "streamable-http"), default="stdio")
-    parser.add_argument("--host", default="127.0.0.1", help="HTTP bind address")
-    parser.add_argument("--port", type=int, default=8000, help="HTTP port")
-    args = parser.parse_args()
-    # httpx logs every request URL at INFO, which drowns out the server's own logs.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    server = create_server()
-    if args.transport == "stdio":
-        server.run("stdio")
-    else:
-        server.run("streamable-http", host=args.host, port=args.port)
-
-
-if __name__ == "__main__":
-    main()
