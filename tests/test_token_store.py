@@ -84,8 +84,10 @@ def _firestore(open_clients: list[Any]) -> StoreFactory:
 async def make_store(request: pytest.FixtureRequest) -> AsyncIterator[StoreFactory]:
     open_clients: list[Any] = []
     yield _memory if request.param == "memory" else _firestore(open_clients)
+    # AsyncClient.close() is synchronous despite the class name - it closes the
+    # underlying transport and returns None, so awaiting it is a TypeError.
     for database in open_clients:
-        await database.close()
+        database.close()
 
 
 def pending(clock: Clock, ttl: float = 600) -> PendingAuthorization:
@@ -296,7 +298,7 @@ async def test_firestore_never_stores_a_secret_that_could_be_presented() -> None
                 stored.append(f"{snapshot.id} {snapshot.to_dict()}")
     finally:
         for opened in open_clients:
-            await opened.close()
+            opened.close()
 
     assert len(stored) == 4
     dump = "\n".join(stored)
