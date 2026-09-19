@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ajwann/queensestate",
+  "title": "Charlotte Open City Data",
+  "description": "Charlotte and Mecklenburg County open data: addresses, crime, 311 requests, zoning, city budget, and nearby public places",
+  "version": "1.0.0",
+  "websiteUrl": "https://github.com/ajwann/queensestate",
+  "repository": {
+    "url": "https://github.com/ajwann/queensestate",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "queensestate",
+      "version": "1.0.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://queensestate.adamwanninger.com/mcp"
+    }
+  ]
+}

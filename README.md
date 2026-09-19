@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.ajwann/queensestate -->
+
 # QueensEstate
 
 An [MCP](https://modelcontextprotocol.io) server that lets an LLM answer Charlotte residents'

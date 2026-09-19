@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # So the release workflow can gate a publish on this same suite.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an in-flight run redundant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The only version pyproject admits (requires-python = ">=3.14").
+        python-version: ["3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # Dev dependencies are a PEP 735 group, which needs pip 25.1 or newer.
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e . --group dev
+      - run: pytest
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          # The version pyproject targets for ruff and mypy.
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e . --group dev
+      - run: ruff check
+      - run: ruff format --check
+      - run: mypy
+
+  # stdio exactly as a PyPI or MCP-registry user gets it: no optional extras.
+  # pytest and respx are test tooling, installed separately on purpose - what
+  # this job proves is that the PACKAGE pulls in no Google Cloud dependency.
+  stdio-plain-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: pip install . pytest respx
+      - name: The gcp extra must not arrive with a plain install
+        run: |
+          python - <<'PY'
+          import importlib.util, sys
+
+          try:
+              found = importlib.util.find_spec("google.cloud.firestore") is not None
+          except ModuleNotFoundError:
+              found = False
+          sys.exit("google-cloud-firestore is installed without the gcp extra" if found else 0)
+          PY
+      - run: queensestate --version
+      - run: pytest tests/test_stdio.py
+
+  # The Firestore token store against the emulator; the main suite skips it.
+  firestore:
+    runs-on: ubuntu-latest
+    env:
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8085
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # The emulator is a Java program shipped as a gcloud component.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: beta,cloud-firestore-emulator
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e . --group dev
+      - name: Start the Firestore emulator
+        run: |
+          gcloud emulators firestore start --host-port="$FIRESTORE_EMULATOR_HOST" > emulator.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf "http://$FIRESTORE_EMULATOR_HOST" > /dev/null && exit 0
+            sleep 1
+          done
+          cat emulator.log
+          exit 1
+      - run: pytest tests/test_token_store.py

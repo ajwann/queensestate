@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from mcp.server.auth.provider import AuthorizationParams
+from mcp.shared.auth import OAuthClientInformationFull
+from pydantic import AnyUrl
 
-from queensestate.config import GoogleOAuthConfig
+from queensestate.config import QUEENSESTATE_SCOPE, GoogleOAuthConfig
 from queensestate.oauth import GoogleIdentity
 
 pytestmark = pytest.mark.anyio
@@ -83,3 +86,38 @@ def test_allow_any_account_admits_a_stranger() -> None:
 
 def test_a_malformed_address_is_refused() -> None:
     assert not google_config(allow_any_account=True).permits("not-an-address", email_verified=True)
+
+
+# -- Fixtures shared with the token-store tests ----------------------------
+
+
+class Clock:
+    """A hand-wound clock, so expiry is tested without waiting for it."""
+
+    def __init__(self, start: float = 1_700_000_000.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def client(client_id: str = "client-1") -> OAuthClientInformationFull:
+    return OAuthClientInformationFull(
+        client_id=client_id,
+        client_secret="client-secret",  # noqa: S106 (a fixture, not a real credential)
+        redirect_uris=[AnyUrl(CLIENT_REDIRECT)],
+        scope=QUEENSESTATE_SCOPE,
+    )
+
+
+def params(**overrides: object) -> AuthorizationParams:
+    settings: dict[str, object] = {
+        "state": "client-state",
+        "scopes": [QUEENSESTATE_SCOPE],
+        "code_challenge": "client-code-challenge",
+        "redirect_uri": AnyUrl(CLIENT_REDIRECT),
+        "redirect_uri_provided_explicitly": True,
+        "resource": RESOURCE_URL,
+    }
+    settings.update(overrides)
+    return AuthorizationParams(**settings)

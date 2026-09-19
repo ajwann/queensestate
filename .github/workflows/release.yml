@@ -1,0 +1,119 @@
+name: Release
+
+# Cutting a version means pushing a tag: `git tag v1.0.1 && git push origin v1.0.1`.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # PyPI refuses a re-upload, so a version mismatch is unrecoverable under that
+  # tag. Catch it before anything is built.
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Tag must match __init__.py and server.json
+        run: |
+          python - <<'PY'
+          import json, os, re, sys
+
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          server = json.load(open("server.json"))
+          # pyproject.toml declares version dynamic and hatch reads it from here,
+          # so this constant is the single source the package is built from. It
+          # is also what the server reports in its MCP initialize response.
+          init = open("src/queensestate/__init__.py").read()
+          reported = re.search(r'^__version__ = "([^"]+)"', init, re.MULTILINE)
+          found = {
+              "src/queensestate/__init__.py (__version__)": reported.group(1) if reported else None,
+              "server.json (version)": server["version"],
+              "server.json (packages[0].version)": server["packages"][0]["version"],
+          }
+          bad = {where: got for where, got in found.items() if got != tag}
+          for where, got in bad.items():
+              print(f"::error::tag is {tag} but {where} is {got}")
+          sys.exit(1 if bad else 0)
+          PY
+
+  test:
+    needs: check-version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    # Must match the environment named in the PyPI trusted publisher.
+    environment: pypi
+    permissions:
+      # Mints the short-lived OIDC token PyPI trusts. No API token to store.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: pip install build
+      - run: python -m build
+      - name: Check the built distributions
+        run: pipx run twine check --strict dist/*
+      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-registry:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      # mcp-publisher trades this for a registry token; no secret to store.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Wait for the release to be visible on PyPI
+        # The registry verifies the mcp-name marker by reading the package
+        # description off PyPI, so it has to be able to see this version.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for attempt in $(seq 1 20); do
+            if curl -sf "https://pypi.org/pypi/queensestate/$version/json" > /dev/null; then
+              echo "queensestate $version is on PyPI"
+              exit 0
+            fi
+            echo "attempt $attempt: not visible yet, retrying in 15s"
+            sleep 15
+          done
+          echo "::error::queensestate $version never appeared on PyPI"
+          exit 1
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+      - name: Authenticate to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+      - name: Publish to the MCP Registry
+        run: ./mcp-publisher publish
+
+  github-release:
+    needs: [publish, publish-registry]
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating the release writes to the repo.
+      contents: write
+    steps:
+      # Only so gh infers the repository; the notes come from the API.
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes
