@@ -63,6 +63,13 @@ jobs:
       - name: Check the built distributions
         run: pipx run twine check --strict dist/*
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A later job in this workflow can fail on its own (the registry is a
+          # separate service), and re-running the tag then re-enters this step
+          # with a version PyPI already has. Skipping it makes the re-run
+          # idempotent rather than fatal. check-version above already proves the
+          # tag and the built artifact agree, so this cannot mask a wrong upload.
+          skip-existing: true
       - uses: actions/upload-artifact@v4
         with:
           name: dist
