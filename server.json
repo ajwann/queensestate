@@ -3,7 +3,7 @@
   "name": "io.github.ajwann/queensestate",
   "title": "Charlotte Open City Data",
   "description": "Charlotte and Mecklenburg County open data: addresses, crime, 311, zoning, budget, and services",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "websiteUrl": "https://github.com/ajwann/queensestate",
   "repository": {
     "url": "https://github.com/ajwann/queensestate",
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "queensestate",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
