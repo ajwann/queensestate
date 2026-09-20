@@ -47,12 +47,13 @@ def _memory(clock: Clock, prefix: str | None = None) -> TokenStore:
 
 
 def firestore_client(open_clients: list[Any]) -> Any:
-    """An emulator-backed client, registered so the fixture can close it.
+    """An emulator-backed client, registered so the caller can close it.
 
-    A Firestore AsyncClient holds gRPC machinery that schedules work back onto
-    the running loop. Left open, it is torn down after anyio has closed that
-    loop and raises "Event loop is closed" from the cleanup rather than from
-    the test - intermittently, because it is a race. Closing it is the fix.
+    A Firestore AsyncClient holds gRPC machinery that outlives the object, so
+    each one is handed back through open_clients to be closed once the work is
+    done. What keeps that machinery off a dead event loop is the session-wide
+    loop in conftest, not this bookkeeping; closing the transport is ordinary
+    hygiene.
     """
     from google.cloud.firestore import AsyncClient
 

@@ -12,9 +12,23 @@ import respx
 type Handler = Callable[[httpx.Request], httpx.Response]
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def _one_loop_for_the_session(anyio_backend: str) -> None:
+    """Hold anyio's test runner open so every test shares one event loop.
+
+    grpc-aio polls on a process-global thread that pins the first loop it sees
+    and posts to it with call_soon_threadsafe forever. A loop per test leaves
+    that thread posting into a loop that has since closed, which anyio reports
+    against whichever test is running by then - the intermittent "Event loop is
+    closed" in the Firestore job, blamed on an innocent test. Being async, this
+    fixture holds anyio's runner lease for the whole session; a session-scoped
+    anyio_backend alone would not, since a sync fixture takes no lease.
+    """
 
 
 @pytest.fixture(autouse=True)
