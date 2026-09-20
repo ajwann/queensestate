@@ -1,6 +1,6 @@
 <!-- mcp-name: io.github.ajwann/queensestate -->
 
-# QueensEstate
+# QueensEstate ♔⛫
 
 [![CI](https://github.com/ajwann/queensestate/actions/workflows/ci.yml/badge.svg)](https://github.com/ajwann/queensestate/actions/workflows/ci.yml)
 
