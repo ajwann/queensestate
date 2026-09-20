@@ -1,6 +1,8 @@
 <!-- mcp-name: io.github.ajwann/queensestate -->
 
-# QueensEstate
+# QueensEstate ♔⛫
+
+[![CI](https://github.com/ajwann/queensestate/actions/workflows/ci.yml/badge.svg)](https://github.com/ajwann/queensestate/actions/workflows/ci.yml)
 
 An [MCP](https://modelcontextprotocol.io) server that lets an LLM answer Charlotte residents'
 everyday questions with official public data from the
